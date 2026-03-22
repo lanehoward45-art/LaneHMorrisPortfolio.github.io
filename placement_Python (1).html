@@ -1,0 +1,356 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+	<META HTTP-EQUIV="Content-Type" CONTENT="text/html;CHARSET=iso-8859-1">
+	<title>Math Placement — Inline Python Quiz</title>
+	<meta name="description" content="Standalone page with Python quiz integrated into existing placement layout."/>
+	<meta charset="UTF-8">
+	<meta name="google" content="notranslate">
+	<meta http-equiv="Content-Language" content="en">
+
+	<link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/smoothness/jquery-ui.css">
+	<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+	<style>
+
+body { font-family: Arial, Helvetica, sans-serif; padding: 10px; color: #222; }
+.btntext { font-size: 1.8ex; }
+.btn {
+ 	position:relative;
+ 	background: none;
+	background-color: #eee;
+	font-size: 1.15rem;
+	min-height: 42px;
+	min-width: 100px;
+	display:inline-block;
+	vertical-align: middle;
+	padding: 8px;
+	border: 1px solid #666;
+	border-radius: 4px;
+	cursor: pointer;
+}
+.btn:hover  { background-color: #dcf; color: #111; }
+.btn.chosen { background-color: #c8f; color: #000; }
+.btn.chosen:hover { background-color: #e9f; color: #000; }
+
+#questions { min-height: 80px; font-size: 1.15rem; margin-bottom: 8px; }
+#answers { min-height: 140px; font-size: 1.05rem; margin-bottom: 8px; }
+#key { height: 60px; font-size: 1.05rem; margin-bottom: 8px; }
+
+#key > div { display: inline-block; padding-top: 8px; background-color: #eee; border-right: 1px solid black; border-left: 1px solid black; width: 40px; height: 30px; text-align: center; cursor: pointer; margin-right: 2px; }
+#key > div.active { padding-top: 6px; height: 28px; border-bottom: 3px solid black; border-top: 3px solid black; }
+#key > div.answered { background-color: #c8f; color: #fff; }
+#key div.correct, .btn.correct, .correct { background-color: #3f3; }
+#q { margin: 10px 0; border-top: 1px solid #ddd; padding-top: 10px; }
+
+#DEBUG { background-color: #eee; padding: 8px; margin-bottom: 8px; }
+table > tr { vertical-align: top; }
+#name_input { width: 300px; }
+#practice, #start_test { width:120px; }
+
+.choice { display:block; margin:6px 0; padding:10px; background:#f6f6f6; border:1px solid #ddd; border-radius:6px; cursor:pointer; }
+.choice:hover { background:#eef; }
+.choice.chosen { background:#c8f; }
+.choice.correct { background:#cfeccf; border-color:#3a8; }
+.choice.wrong { background:#f7d3d3; border-color:#d33; color:#400; }
+
+.pyq-progress { font-size:0.95em; color:#333; margin-bottom:8px; }
+.pyq-result { font-size:1.05em; margin-top:12px; }
+.explanation { margin-top:8px; color:#333; font-size:0.95rem; padding:8px; border-radius:6px; background:#fffbea; border:1px solid #f0e0a0; display:none; }
+#results { margin-top: 12px; padding:8px; border:1px solid #ddd; display:none; background: #fafafa; }
+	</style>
+</head>
+<body>
+
+
+<div id="DEBUG">
+	<p>Which test:
+	<span id="levels"></span><br>
+	<button class="btn" id="regen">regenerate problem</button>
+	&emsp;<span id="objective"></span></p>
+</div>
+
+<div id="other-buttons">
+	<button class="btn" id="prev">previous</button>
+	<button class="btn" id="next">next</button>
+	&emsp;&emsp;&emsp;
+	<span class="for_practice" style="float:right">
+	<button class="btn" id="check_answers">Check answers</button>
+	&emsp;
+	<button class="btn" id="show_menu">Show menu</button>
+	</span>
+	<span class="for_test" style="float:right">
+	<button class="btn" id="submit">SUBMIT</button>
+	</span>
+</div>
+
+
+<div id="q">
+	<div id="key" aria-hidden="true"></div>
+	<div id="questions" aria-live="polite"></div>
+	<div id="answers"></div>
+	<div class="pyq-progress" id="pyq_progress" style="display:none"></div>
+	<div class="explanation" id="pyq_explanation" role="region" aria-live="polite"></div>
+</div>
+
+<div id="select_test">
+	<p>These tests are designed to help us determine which math class you are prepared for...</p>
+	<hr>
+	<p>Selected test:
+	<select id="test_choices">
+		<option value="">choose one</option>
+		<option value="python">Python</option>
+	</select>
+	</p>
+	<hr>
+	<table>
+	<tr>
+		<td><button class="btn" id="practice">Practice</button></td>
+		<td><p>Practice retries missed questions after a test; otherwise starts a practice quiz.</p></td>
+	</tr>
+	<tr>
+		<td><button class="btn" id="start_test">Start test</button></td>
+		<td><p>Select "Python" then press Start test to begin.</p></td>
+	</tr>
+	</table>
+</div>
+
+
+<div id="results">
+	<p class="for_test">Elapsed time: <span id="elapsed_time"></span></p>
+	<p>Score: <span id="score_out"></span></p>
+	<p>Incorrect: <span id="incorrect_out"></span></p>
+	<p>Skipped: <span id="skipped_out"></span></p>
+</div>
+
+<script>
+
+window.regenerate = window.regenerate || function(flag){ console.log("regenerate stub", flag); };
+window.advance = window.advance || function(n){ console.log("advance stub", n); };
+</script>
+
+<script>
+
+(function(global, $){
+	"use strict";
+	if (!$) { console.error("jQuery required"); return; }
+
+	var PyQuiz = {
+		pool: [],
+		currentQuiz: null,
+		lastMissed: null
+	};
+
+	PyQuiz.pool = [
+		{ id:1, q:"What is the output of 'x = [1, 2, 3, 4] print(x[1:3])'", choices:["[1, 2]","[2, 3]","[3, 4]","Error"], answer:1 },
+		{ id:2, q:"How do you create a list containing 0..4?", choices:["range(0,5)","list(range(5))","[0..4]","for i in range(5): i"], answer:1 },
+		{ id:3, q:"Which is the correct function definition taking a and b?", choices:["function f(a,b):","def f(a, b):","def f a, b :", "f def(a,b):"], answer:1 },
+		{ id:4, q:"What does 'hello'.upper() return?", choices:["'hello'","'Hello'","'HELLO'","error"], answer:2 },
+		{ id:5, q:"What is bool('') (empty string)?", choices:["True","False","Depends","None"], answer:1, explanation:"Empty strings are false." },
+		{ id:6, q:"Which creates a dict mapping 'a'->1 and 'b'->2?", choices:["{'a':1,'b':2}","dict(a=1,b=2)","['a':1,'b':2]","(a:1)"], answer:0 },
+		{ id:7, q:"After x=[1,2,3]; y=x; y.append(4); what is x?", choices:["[1,2,3]","[1,2,3,4]","error","unchanged"], answer:1, explanation:"Lists are referenced." },
+		{ id:8, q:"What does the len() function do in Python", choices:["Returns the sum of numeric elements","Returns the number of items in an object","Converts a string to a lowercase","Deletes an object"], answer:1 },
+		{ id:9, q:"What does list(range(2,10,2)) produce?", choices:["[2,4,6,8]","[2..9]","[0,2,4,6,8]","[2,10]"], answer:0 },
+		{ id:10, q:"Which comprehension gives squares 0..4?", choices:["[x*x for x in range(5)]","[for x in range(5): x*x]","(x*x for x in range(5))","{x*x for x in range(5)}"], answer:0 },
+
+		{ id:11, q:"What is 'a' * 3 ?", choices:["'aaa'","['a','a','a']","TypeError","'a3'"], answer:0 },
+		{ id:12, q:"How to check x is None?", choices:["if x == None:","if x is None:","if None == x:","if x.equals(None):"], answer:1 },
+		{ id:13, q:"What error is raised for undefined variable?", choices:["TypeError","NameError","IndexError","KeyError"], answer:1 },
+		{ id:14, q:"Which of the statements is correct about Python dictionaries?", choices:["Dictionary keys can be mutable","Dictionary values can be of any type","Dictionary keys can be duplicated","Dictionaries maintain insertion order in Python 2"], answer:1 },
+		{ id:15, q:"''.join(['a','b','c']) returns?", choices:["['a','b','c']","'a b c'","'abc'","None"], answer:2 },
+
+		{ id:16, q:"Which import lets you call sqrt(x) directly?", choices:["import math; math.sqrt","from math import sqrt","import sqrt from math","import math.sqrt"], answer:1 },
+		{ id:17, q:"L[1:4] returns which elements?", choices:["indices 1,2,3","1..4 inclusive","single element","mutates L"], answer:0 },
+		{ id:18, q:"Which expression is True when x==0?", choices:["if x:","if not x:","if x is True:","if x==1:"], answer:1 },
+		{ id:19, q:"What does break do inside a loop?", choices:["skip next","exit the loop immediately","raise an exception","restart the loop"], answer:1 },
+		{ id:20, q:"What converts '123' to integer 123?", choices:["int('123')","str('123')","float('123')","eval('123')"], answer:0 }
+	];
+
+	function shuffle(arr){ for(var i=arr.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=arr[i]; arr[i]=arr[j]; arr[j]=t;} return arr; }
+	function pickRandomIndices(n){ var idx = Array.from({length:PyQuiz.pool.length}, (_,i)=>i); shuffle(idx); return idx.slice(0,n); }
+	function clone(obj){ return $.extend(true, {}, obj); }
+	function createQuiz(n){ return pickRandomIndices(n).map(i => { var q = clone(PyQuiz.pool[i]); q.chosen = -1; return q; }); }
+
+	PyQuiz.renderAllKeys = function() {
+		var $key = $("key").empty();
+		var quiz = PyQuiz.currentQuiz; if(!quiz) return;
+		quiz.questions.forEach(function(_, i){
+			var div = $("<div>").attr("id","key"+i).text("#"+(i+1));
+			if (i === quiz.currentIndex) div.addClass("active");
+			if (quiz.questions[i].chosen !== -1) div.addClass("answered");
+			$key.append(div);
+		});
+		$("key > div").off("click").on("click", function(){ var id = $(this).attr("id"); var n = parseInt(id.slice(3),10); quiz.currentIndex = n; PyQuiz.renderQuestion(n); });
+	};
+
+	PyQuiz.renderQuestion = function(idx){
+		var quiz = PyQuiz.currentQuiz; if(!quiz) return;
+		quiz.currentIndex = idx;
+		PyQuiz.renderAllKeys();
+		var q = quiz.questions[idx];
+		$("#questions").html("<strong>Q"+(idx+1)+".</strong> "+q.q);
+		var $answers = $("#answers").empty();
+		q.choices.forEach(function(choice, i){
+			var $c = $("<div>").addClass("choice").attr("data-i", i).html("<strong>"+String.fromCharCode(65+i)+"</strong>. "+choice);
+			if (q.chosen === i) $c.addClass("chosen");
+			
+			if (quiz.submitted) {
+				if (i === q.answer) $c.addClass("correct");
+				if (q.chosen === i && q.chosen !== q.answer) $c.addClass("wrong");
+				$c.css("cursor","default");
+			}
+			$answers.append($c);
+		});
+		$("#pyq_progress").show().text("Question "+(idx+1)+" of "+quiz.questions.length+" — answered: "+quiz.questions.filter(x=>x.chosen!==-1).length);
+		$("#pyq_explanation").hide().text('');
+		
+		$("#answers .choice").off("click").on("click", function(){
+			var i = parseInt($(this).attr("data-i"),10);
+			if (quiz.submitted) return;
+			var q = quiz.questions[quiz.currentIndex];
+			q.chosen = (q.chosen === i) ? -1 : i;
+			
+			if (quiz.practiceMode) {
+				var prevSubmitted = quiz.submitted;
+				quiz.submitted = true;
+				PyQuiz.renderQuestion(quiz.currentIndex);
+				if (q.explanation) $("#pyq_explanation").text("Explanation: "+q.explanation).show();
+				quiz.submitted = prevSubmitted;
+			} else {
+				PyQuiz.renderQuestion(quiz.currentIndex);
+			}
+		});
+	};
+
+	PyQuiz.next = function(){ if(!PyQuiz.currentQuiz) return; if(PyQuiz.currentQuiz.currentIndex < PyQuiz.currentQuiz.questions.length-1){ PyQuiz.currentQuiz.currentIndex++; PyQuiz.renderQuestion(PyQuiz.currentQuiz.currentIndex); } };
+	PyQuiz.prev = function(){ if(!PyQuiz.currentQuiz) return; if(PyQuiz.currentQuiz.currentIndex > 0){ PyQuiz.currentQuiz.currentIndex--; PyQuiz.renderQuestion(PyQuiz.currentQuiz.currentIndex); } };
+
+	
+	PyQuiz.regenerateCurrent = function(){
+		if (!PyQuiz.currentQuiz) { PyQuiz.startNewQuiz({practice:true}); return; }
+		var used = PyQuiz.currentQuiz.questions.map(q=>q.id);
+		var candidates = PyQuiz.pool.filter(q=> used.indexOf(q.id) === -1);
+		if (candidates.length === 0) candidates = PyQuiz.pool.filter(q=> q.id !== PyQuiz.currentQuiz.questions[PyQuiz.currentQuiz.currentIndex].id);
+		var newQ = clone(candidates[Math.floor(Math.random()*candidates.length)]);
+		newQ.chosen = -1;
+		PyQuiz.currentQuiz.questions[PyQuiz.currentQuiz.currentIndex] = newQ;
+		PyQuiz.renderQuestion(PyQuiz.currentQuiz.currentIndex);
+	};
+
+	PyQuiz.startNewQuiz = function(opts){
+		opts = opts || {};
+		var practice = !!opts.practice;
+		var quiz = { questions: createQuiz(10), currentIndex:0, startTime: new Date(), submitted:false, practiceMode: practice };
+		PyQuiz.currentQuiz = quiz;
+		PyQuiz.lastMissed = null;
+		$("#results").hide();
+		PyQuiz.renderQuestion(0);
+	};
+
+	function submitAndShowResults(){
+		var quiz = PyQuiz.currentQuiz; if(!quiz) return;
+		var correct = 0, missed = [], skipped = [];
+		quiz.questions.forEach(function(q,i){
+			if (q.chosen === q.answer) correct++;
+			else if (q.chosen === -1) skipped.push(i+1);
+			else missed.push(i+1);
+		});
+		quiz.submitted = true;
+		
+		PyQuiz.lastMissed = missed.length ? missed.map(i => clone(quiz.questions[i-1])) : null;
+		var elapsed = Math.round((new Date() - quiz.startTime)/1000);
+		var minutes = Math.floor(elapsed/60), seconds = elapsed % 60;
+		$("#elapsed_time").text((minutes?minutes+"m ":"") + seconds + "s");
+		$("#score_out").text(correct + " out of " + quiz.questions.length);
+		$("#incorrect_out").text(missed.length ? missed.join(", ") : "none");
+		$("#skipped_out").text(skipped.length ? skipped.join(", ") : "none");
+		$("#results").show();
+		PyQuiz.renderQuestion(quiz.currentIndex);
+	}
+
+	function setupBindings(){
+		
+		$("#start_test").off("click").on("click", function(){
+			var sel = $("#test_choices").val();
+			if (sel === "python") {
+				PyQuiz.startNewQuiz({practice:false});
+			} else {
+				alert("Please select 'Python' from the Selected test dropdown to start the Python quiz.");
+			}
+		});
+
+		$("#practice").off("click").on("click", function(){
+			if (PyQuiz.lastMissed && PyQuiz.lastMissed.length) {
+				
+				var quiz = { questions: PyQuiz.lastMissed.map(q=> { var c=clone(q); c.chosen = -1; return c; }), currentIndex:0, startTime:new Date(), submitted:false, practiceMode:true };
+				PyQuiz.currentQuiz = quiz;
+				$("#results").hide();
+				PyQuiz.renderQuestion(0);
+			} else {
+				PyQuiz.startNewQuiz({practice:true});
+			}
+		});
+
+		
+		$("#regen").off("click").on("click", function(){
+			if (PyQuiz.currentQuiz) PyQuiz.regenerateCurrent();
+			else PyQuiz.startNewQuiz({practice:true});
+		});
+
+		$("#prev").off("click").on("click", function(){ if (PyQuiz.currentQuiz) PyQuiz.prev(); else alert("No active quiz"); });
+		$("#next").off("click").on("click", function(){ if (PyQuiz.currentQuiz) PyQuiz.next(); else alert("No active quiz"); });
+
+	
+		$("#check_answers").off("click").on("click", function(){ if (PyQuiz.currentQuiz) submitAndShowResults(); else alert("No active quiz"); });
+		$("#submit").off("click").on("click", function(){ if (PyQuiz.currentQuiz) submitAndShowResults(); else alert("No active quiz"); });
+
+		$(document).on("keydown", function(e){
+			var quiz = PyQuiz.currentQuiz;
+			if (!quiz) return;
+			
+			if ($("#questions").is(":visible") === false) return;
+			if (e.key >= '1' && e.key <= '9') {
+				var idx = parseInt(e.key,10)-1;
+				var q = quiz.questions[quiz.currentIndex];
+				if (idx < q.choices.length && !quiz.submitted) {
+					q.chosen = (q.chosen === idx) ? -1 : idx;
+					if (quiz.practiceMode) {
+						var prev = quiz.submitted; quiz.submitted = true;
+						PyQuiz.renderQuestion(quiz.currentIndex);
+						if (q.explanation) $("#pyq_explanation").text("Explanation: "+q.explanation).show();
+						quiz.submitted = prev;
+					} else {
+						PyQuiz.renderQuestion(quiz.currentIndex);
+					}
+				}
+			} else if (e.key === "ArrowLeft") PyQuiz.prev();
+			else if (e.key === "ArrowRight") PyQuiz.next();
+			else if (e.key.toLowerCase() === 's') submitAndShowResults();
+		});
+
+		global.regenerate = function(flag){
+			if (PyQuiz.currentQuiz) {
+				if (flag) PyQuiz.regenerateCurrent();
+				else PyQuiz.renderQuestion(PyQuiz.currentQuiz.currentIndex);
+			} else {
+				if (flag) PyQuiz.startNewQuiz({practice:true});
+			}
+		};
+		global.advance = function(n){
+			if (!PyQuiz.currentQuiz) return;
+			if (n > 0) PyQuiz.next(); else PyQuiz.prev();
+		};
+	}
+
+	$(function(){
+		setupBindings();
+		
+		$("#test_choices").val("python");
+		global.PyQuiz = PyQuiz;
+	});
+
+})(window, window.jQuery);
+</script>
+
+</body>
+</html>
